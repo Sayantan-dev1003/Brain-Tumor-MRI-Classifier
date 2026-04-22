@@ -48,11 +48,5 @@ models/*.h5
 models/*.weights
 models/*.pt
 
-# Project Specific - Generated Results & Plots
-*.png
-*.jpg
-*.jpeg
-results_summary.csv
-
 # Logs
 *.log

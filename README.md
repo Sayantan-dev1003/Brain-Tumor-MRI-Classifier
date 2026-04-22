@@ -12,33 +12,7 @@
 [![Kaggle](https://img.shields.io/badge/Trained%20on-Kaggle%20GPU-20BEFF?style=flat-square&logo=kaggle&logoColor=white)](https://www.kaggle.com/)
 
 <br/>
-
-**CV Course Project — IITRAM, Ahmedabad**  
-Team: **VisionGuard** | Under Guidance of Dr. Prasun Chandra Tripathi
-
 </div>
-
----
-
-## 📋 Table of Contents
-
-- [Overview](#-overview)
-- [Motivation](#-motivation)
-- [Architecture](#-architecture)
-- [Models](#-models)
-- [Dataset](#-dataset)
-- [Training Pipeline](#-training-pipeline)
-- [Results](#-results)
-- [Explainability](#-explainability)
-- [Project Structure](#-project-structure)
-- [Getting Started](#-getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Step 1 — Train on Kaggle](#step-1--train-on-kaggle)
-  - [Step 2 — Run the Streamlit App](#step-2--run-the-streamlit-app)
-- [App Features](#-app-features)
-- [Generated Outputs](#-generated-outputs)
-- [References](#-references)
-- [Team](#-team)
 
 ---
 
@@ -74,35 +48,28 @@ Introduced in ["An Image is Worth 16×16 Words"](https://arxiv.org/abs/2010.1192
 
 **Processing pipeline:**
 
-```
-Input MRI (224×224)
-    │
-    ▼
-Patch Splitting — 196 patches of 16×16 pixels
-    │
-    ▼
-Linear Projection → Patch Embeddings (D=768)
-    │
-    ▼
-+ [CLS] Token + Positional Embeddings
-    │
-    ▼
-Transformer Encoder × 12 Layers
-  └─ Multi-Head Self-Attention (12 heads)
-  └─ Layer Norm + Feed-Forward Network
-    │
-    ▼
-[CLS] Token Output
-    │
-    ▼
-Classification Head → 4 Classes
-```
+![ViT-B/16 Architecture](assets/vit_architecture.png)
 
 **Key advantages over CNNs:**
 - Every patch attends to every other patch — captures global spatial context from layer 1
 - Attention weights are input-dependent, adapting dynamically to each scan
 - Uniform architecture across all layers — no handcrafted feature hierarchy
 - Attention rollout from the `[CLS]` token directly produces diagnostic heatmaps
+
+#### 🧠 Multi-Head Self-Attention (MHSA)
+While single-head attention learns one relationship pattern, **Multi-Head Self-Attention** allows the model to simultaneously attend to information from different representation subspaces at different positions.
+
+![Self-Attention Mechanism](assets/self_attention.png)
+
+- **Parallel Processing**: In our ViT-B/16 model, we use **12 attention heads**. Each head operates in parallel, allowing the model to focus on various features:
+  - *Heads 1-4*: Typically capture local features like tumor boundaries and sharp edges.
+  - *Heads 5-8*: Often learn global spatial context, such as the overall symmetry of the brain.
+  - *Heads 9-12*: Focus on complex relational features and subtle intensity variations in MRI signals.
+- **The Mathematical Mechanism**:
+  1. **Linear Projection**: Input embeddings are projected into $h$ sets of Queries ($Q_i$), Keys ($K_i$), and Values ($V_i$).
+  2. **Scaled Dot-Product**: For each head, attention is computed as: $Attention(Q,K,V) = Softmax(\frac{QK^T}{\sqrt{d_k}})V$. The scaling factor $\sqrt{d_k}$ prevents the dot product from growing too large.
+  3. **Concatenation**: The outputs of all 12 heads are concatenated and projected back to the original dimension: $MultiHead(Q,K,V) = Concat(head_1, ..., head_h)W^O$.
+- **Why it matters for MRI**: Medical diagnosis is multi-faceted. A tumor's classification depends on its size, texture, and position relative to brain structures. MHSA ensures the model doesn't over-fixate on a single visual cue, providing a more robust diagnostic representation.
 
 ---
 
@@ -118,6 +85,40 @@ All classification heads were replaced with a `Dropout(0.4) → Linear(→ 4)` l
 
 ---
 
+## 🔄 System Workflow (Deep Dive)
+
+The project follows a unified pipeline for all three models (ResNet-50, EfficientNet-B0, and ViT-B/16), ensuring a fair comparison across different architectures.
+
+![System Workflow Diagram](assets/workflow.png)
+
+### 1. Data Acquisition & Preprocessing
+- **Input**: Raw MRI scans (JPG) from 4 diagnostic classes.
+- **Standardization**: Images are resized to **224×224** pixels. Pixel values are normalized using the ImageNet dataset's mean and standard deviation $(\mu=[0.485, 0.456, 0.406], \sigma=[0.229, 0.224, 0.225])$ to match the pretrained model weights.
+- **Augmentation Strategy**: To prevent overfitting on the 7,200 images, we apply random horizontal flips, rotations (±10°), and color jittering during the training phase only.
+
+### 2. Model Architecture Selection
+- **CNN Branch**:
+  - **ResNet-50**: Uses residual blocks to overcome vanishing gradients, focusing on hierarchical spatial features.
+  - **EfficientNet-B0**: Uses compound scaling to optimize depth, width, and resolution with minimal parameters (~5.3M).
+- **ViT Branch**:
+  - **ViT-B/16**: Treats the image as a sequence of 196 patches (16x16 pixels). It adds a learnable `[CLS]` token and positional embeddings to preserve spatial order.
+
+### 3. Training & Optimization
+- **Loss Function**: We use **Cross-Entropy Loss**, which is ideal for multi-class classification by penalizing the distance between predicted probabilities and true labels.
+- **Optimizer**: **Adam** optimizer with a weight decay of $1e-4$ for regularization.
+- **LR Scheduling**: A **Cosine Annealing** scheduler is used to smoothly decay the learning rate over 20 epochs, helping the model converge to a sharper global minimum.
+
+### 4. Classification & Post-Processing
+- The feature vectors from the models (Global Average Pooling for CNNs or `[CLS]` for ViT) are passed through a custom head: `Linear(Dropout(0.4)) → Linear(4 Classes)`.
+- **Softmax** is applied at the final layer to convert raw logits into interpretable confidence percentages.
+
+### 5. Diagnostic Explainability (XAI)
+To build clinical trust, the workflow generates visual justifications:
+- **CNNs**: GradCAM computes gradients of the target class with respect to the last convolutional layer to highlight important regions.
+- **ViT**: Attention Rollout averages attention across heads in the final transformer layer, highlighting the specific patches the model "looked at" to make its prediction.
+
+---
+
 ## 📊 Dataset
 
 **Source:** [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset) by Masoud Nickparvar on Kaggle
@@ -127,7 +128,7 @@ All classification heads were replaced with a `Dropout(0.4) → Linear(→ 4)` l
 | Total Images | 7,200 |
 | Format | JPG |
 | Input Resolution | 224 × 224 px |
-| Classes | 4 |
+| Classes | 4 (Glioma, Meningioma, Pituitary tumor, No tumor)|
 
 ### Class Distribution
 
@@ -360,22 +361,6 @@ The Streamlit app provides a fully interactive inference and explainability inte
 6. Nickparvar, M. [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset). Kaggle.
 7. Selvaraju, R. R. et al. (2017). *Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization.* ICCV 2017.
 8. Vaswani, A. et al. (2017). *Attention is All You Need.* NeurIPS 2017.
-
----
-
-## 👥 Team
-
-**Team VisionGuard** — Computer Engineering, IITRAM Ahmedabad (Batch 2023–2027)
-
-| Name | Roll Number |
-|------|-------------|
-| Sayantan Halder | 231040012015 |
-| Priyanshi Patel | 231040011025 |
-| Sandeep | 231040012013 |
-| Chandan Bishoyi | 231040012003 |
-| Neha Vaghela | 231040011020 |
-
-**Faculty Advisor:** Dr. Prasun Chandra Tripathi
 
 ---
 
