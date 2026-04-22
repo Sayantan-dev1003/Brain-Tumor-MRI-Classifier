@@ -88,8 +88,7 @@ While single-head attention learns one relationship pattern, **Multi-Head Self-A
      - $\sqrt{d_k}$: A scaling factor to prevent the dot product from reaching regions of the Softmax function where gradients are extremely small.
      - $\text{Softmax}$: Normalizes the scores into a probability distribution (summing to 1).
 
-3. **Multi-Head Concatenation**: The outputs of all 12 heads are concatenated and projected back to the original dimension $D$ using an output projection matrix $W^O \in \mathbb{R}^{D \times D}$:
-     $$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \text{head}_2, \dots, \text{head}_{12}) W^O$$
+3. **Multi-Head Concatenation**: The outputs of all 12 heads are concatenated and projected back to the original dimension $D$ using an output projection matrix $W^O \in \mathbb{R}^{D \times D}$: $$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \text{head}_2, \dots, \text{head}_{12}) W^O$$
 
 **Why it matters for MRI**: Medical diagnosis is multi-faceted. A tumor's classification depends on its size, texture, and position relative to brain structures. MHSA ensures the model doesn't over-fixate on a single visual cue, providing a more robust diagnostic representation.
 
