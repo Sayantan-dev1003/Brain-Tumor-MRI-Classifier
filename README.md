@@ -255,18 +255,30 @@ The following metrics were computed on the held-out test set (1,600 images).
 
 | Model | Accuracy | F1-Score (macro) | Precision | Recall | AUC-ROC |
 |-------|:--------:|:----------------:|:---------:|:------:|:-------:|
-| ResNet-50 | 94.56% | 0.9442 | 0.9490 | 0.9456 | 0.9867 |
-| EfficientNet-B0 | 95.31% | 0.9521 | 0.9567 | 0.9531 | **0.9950** |
-| **ViT-B/16** | **95.50%** | **0.9541** | **0.9586** | **0.9550** | 0.9895 |
+| ResNet-50 | 94.75% | 0.9462 | 0.9518 | 0.9475 | 0.9854 |
+| EfficientNet-B0 | 95.00% | 0.9490 | 0.9536 | 0.9500 | **0.9941** |
+| **ViT-B/16** | **95.56%** | **0.9548** | **0.9580** | **0.9556** | 0.9884 |
 
 
 
-**Generated metric plots:**
-- `loss_curves_all_models.png` — Train / Val loss for all 3 models over 20 epochs
-- `confusion_matrices_all_models.png` — Raw count confusion matrices (3 subplots)
-- `roc_ResNet50.png`, `roc_EfficientNetB0.png`, `roc_ViT-B-16.png` — Per-class + macro AUC-ROC
-- `metrics_comparison_table.png` — Grouped bar chart comparing Accuracy, F1, Precision, Recall
-- `results_summary.csv` — All numeric results in tabular form
+### 📊 Performance Visualization
+
+#### 1. Training Dynamics
+| Loss Curves | Accuracy Curves |
+|:---:|:---:|
+| ![Loss Curves](assets/metrics/loss_curves_all_models.png) | ![Accuracy Curves](assets/metrics/accuracy_curves_all_models.png) |
+
+#### 2. Confusion Matrices & Statistical Summary
+![Confusion Matrices](assets/metrics/confusion_matrices_all_models.png)
+*Figure: Detailed confusion matrices for ResNet-50, EfficientNet-B0, and ViT-B/16.*
+
+![Metrics Comparison](assets/metrics/metrics_comparison_table.png)
+*Figure: Comparative analysis of Accuracy, F1-Score, Precision, and Recall across all models.*
+
+#### 3. AUC-ROC Analysis
+| ResNet-50 | EfficientNet-B0 | ViT-B/16 |
+|:---:|:---:|:---:|
+| ![ROC ResNet](assets/metrics/roc_ResNet50.png) | ![ROC EfficientNet](assets/metrics/roc_EfficientNetB0.png) | ![ROC ViT](assets/metrics/roc_ViT-B-16.png) |
 
 ---
 
@@ -280,7 +292,11 @@ Gradient-weighted Class Activation Maps highlight the spatial regions most influ
 
 - **Target layer — ResNet-50:** `model.layer4[-1]`
 - **Target layer — EfficientNet-B0:** `model.features[-1]`
-- Outputs: Original MRI | GradCAM Heatmap | Overlay (3-panel figure)
+#### GradCAM Visualizations
+| ResNet-50 | EfficientNet-B0 |
+|:---:|:---:|
+| ![GradCAM ResNet50](assets/explainability/gradcam_ResNet50.png) | ![GradCAM EfficientNetB0](assets/explainability/gradcam_EfficientNetB0.png) |
+*Figure: GradCAM heatmaps showing focus areas (red) for CNN-based tumor detection.*
 
 ### ViT Attention Rollout (ViT-B/16)
 
@@ -294,7 +310,17 @@ Last layer attention: (1, 12, 197, 197)
     → Bilinear upsample   → (224, 224) heatmap overlay
 ```
 
-- Outputs: Original MRI | Attention Map (jet colormap) | Overlay | Per-class Confidence bars (4-panel figure)
+#### ViT Attention Visualization
+![ViT Attention Maps](assets/explainability/vit_attention_maps.png)
+*Figure: Attention rollout highlighting patch-based focus regions in ViT-B/16.*
+
+#### Multi-Layer & Head Analysis
+To understand how the model learns, we visualize attention across different depths and heads:
+
+| Attention Across Layers | Attention Across Heads (Final Layer) |
+|:---:|:---:|
+| ![Attention Layers](assets/explainability/vit_attention_all_layers.png) | ![Attention Heads](assets/explainability/vit_attention_heads.png) |
+*Figure: Left: Evolution of attention from shallow to deep layers. Right: Diverse focus points of the 12 attention heads.*
 
 ---
 

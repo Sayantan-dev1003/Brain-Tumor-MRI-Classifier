@@ -44,7 +44,8 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import label_binarize
 
-from transformers import ViTForImageClassification
+# ── KEY FIX: import ViTConfig alongside ViTForImageClassification ──
+from transformers import ViTForImageClassification, ViTConfig
 
 
 # ─────────────────────────────────────────
@@ -167,9 +168,21 @@ def get_efficientnet_b0(num_classes):
 
 
 def get_vit_b16(num_classes):
+    """
+    KEY FIX: Build ViT using ViTConfig with output_attentions=True baked in.
+    This ensures attention tensors are always returned during both training
+    and inference, without needing to pass output_attentions=True per call.
+    Using from_pretrained on the config object loads the pretrained weights correctly.
+    """
+    vit_config = ViTConfig.from_pretrained("google/vit-base-patch16-224-in21k")
+    vit_config.num_labels        = num_classes
+    vit_config.output_attentions = True   # ← baked into config permanently
+    vit_config.id2label          = {i: c for i, c in enumerate(CONFIG["class_names"])}
+    vit_config.label2id          = {c: i for i, c in enumerate(CONFIG["class_names"])}
+
     model = ViTForImageClassification.from_pretrained(
         "google/vit-base-patch16-224-in21k",
-        num_labels=num_classes,
+        config=vit_config,
         ignore_mismatched_sizes=True,
     )
     return model
@@ -185,6 +198,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device, is_vit=False):
     for images, labels in loader:
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad()
+        # For ViT: .logits extracts just the class scores from the full output object
         outputs = model(pixel_values=images).logits if is_vit else model(images)
         loss    = criterion(outputs, labels)
         loss.backward()
@@ -296,6 +310,10 @@ def compute_metrics(model, test_loader, device, is_vit=False):
     print(f"  ✅ Acc: {test_acc:.4f} | F1: {f1:.4f} | "
           f"Prec: {prec:.4f} | Rec: {rec:.4f} | AUC: {auc_score:.4f}")
 
+    print(f"\n  Classification Report:")
+    print(classification_report(test_labels, test_preds,
+                                 target_names=CONFIG["display_names"], digits=4))
+
     return {
         "accuracy"  : test_acc,
         "f1_score"  : f1,
@@ -309,7 +327,7 @@ def compute_metrics(model, test_loader, device, is_vit=False):
 
 
 # ─────────────────────────────────────────
-# SECTION 6: PLOT — TRAINING CURVES (final epoch, loss only, all 3 models)
+# SECTION 6: PLOT — TRAINING CURVES
 # ─────────────────────────────────────────
 
 COLORS = {
@@ -319,7 +337,6 @@ COLORS = {
 }
 
 def plot_combined_loss_curves(all_histories):
-    """Single figure: train & val loss for all 3 models over full training."""
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle("Training & Validation Loss — All Models (20 Epochs)",
                  fontsize=15, fontweight="bold")
@@ -345,12 +362,44 @@ def plot_combined_loss_curves(all_histories):
     print(f"  Saved: {path}")
 
 
+def plot_combined_accuracy_curves(all_histories):
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle("Training & Validation Accuracy — All Models (20 Epochs)",
+                 fontsize=15, fontweight="bold")
+
+    for ax, (model_name, history) in zip(axes, all_histories.items()):
+        color = COLORS[model_name]
+        x = range(1, len(history["train_acc"]) + 1)
+        ax.plot(x, [v * 100 for v in history["train_acc"]], color=color,
+                linewidth=2.5, label="Train Acc")
+        ax.plot(x, [v * 100 for v in history["val_acc"]], color=color,
+                linewidth=2.5, linestyle="--", alpha=0.75, label="Val Acc")
+        best_epoch = int(np.argmax(history["val_acc"])) + 1
+        best_acc   = max(history["val_acc"]) * 100
+        ax.axvline(x=best_epoch, color="#E74C3C", linestyle=":", linewidth=1.5,
+                   label=f"Best E{best_epoch} ({best_acc:.1f}%)")
+        ax.set_title(model_name, fontsize=13, fontweight="bold")
+        ax.set_xlabel("Epoch", fontsize=11)
+        ax.set_ylabel("Accuracy (%)", fontsize=11)
+        ax.set_ylim(0, 105)
+        ax.legend(fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    plt.tight_layout()
+    path = os.path.join(CONFIG["save_dir"], "accuracy_curves_all_models.png")
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.show()
+    print(f"  Saved: {path}")
+
+
 # ─────────────────────────────────────────
-# SECTION 7: PLOT — CONFUSION MATRICES (raw count, all 3 models, 1 figure)
+# SECTION 7: PLOT — CONFUSION MATRICES
 # ─────────────────────────────────────────
 
 def plot_combined_confusion_matrices(all_results):
-    """One figure with 3 subplots — raw count confusion matrix per model."""
+    """Raw count confusion matrices — all 3 models in one figure."""
     fig, axes = plt.subplots(1, 3, figsize=(22, 7))
     fig.suptitle("Confusion Matrices — All Models (Raw Counts)",
                  fontsize=15, fontweight="bold")
@@ -373,7 +422,7 @@ def plot_combined_confusion_matrices(all_results):
 
 
 # ─────────────────────────────────────────
-# SECTION 8: PLOT — AUC-ROC (1 graph per model, all classes)
+# SECTION 8: PLOT — AUC-ROC
 # ─────────────────────────────────────────
 
 def plot_roc_curves_per_model(all_results):
@@ -418,7 +467,7 @@ def plot_roc_curves_per_model(all_results):
 
 
 # ─────────────────────────────────────────
-# SECTION 9: PLOT — METRICS TABLE (Accuracy, F1, Precision, Recall)
+# SECTION 9: PLOT — METRICS TABLE
 # ─────────────────────────────────────────
 
 def plot_metrics_table(all_results):
@@ -459,7 +508,6 @@ def plot_metrics_table(all_results):
     plt.show()
     print(f"  Saved: {path}")
 
-    # Print table
     print("\n" + "=" * 72)
     print("  METRICS COMPARISON TABLE")
     print("=" * 72)
@@ -490,7 +538,7 @@ def tensor_to_rgb(img_tensor):
 
 def visualize_gradcam(model, model_name, target_layer, test_dataset, device,
                       num_samples=8):
-    """GradCAM visualization — 2 samples per class."""
+    """GradCAM visualization — 2 samples per class, 3-column layout."""
     model.eval()
 
     class_indices = {i: [] for i in range(CONFIG["num_classes"])}
@@ -501,7 +549,6 @@ def visualize_gradcam(model, model_name, target_layer, test_dataset, device,
             break
 
     sample_indices = [idx for v in class_indices.values() for idx in v][:num_samples]
-
     cam = GradCAM(model=model, target_layers=[target_layer])
 
     fig, axes = plt.subplots(num_samples, 3, figsize=(14, num_samples * 3.8))
@@ -518,16 +565,16 @@ def visualize_gradcam(model, model_name, target_layer, test_dataset, device,
         input_tensor = img_tensor.unsqueeze(0).to(device)
 
         with torch.no_grad():
-            logits  = model(input_tensor)
-            probs   = torch.softmax(logits, dim=1)[0].cpu().numpy()
-            pred    = int(probs.argmax())
+            logits = model(input_tensor)
+            probs  = torch.softmax(logits, dim=1)[0].cpu().numpy()
+            pred   = int(probs.argmax())
 
         grayscale_cam = cam(input_tensor=input_tensor,
                             targets=[ClassifierOutputTarget(pred)])[0]
-        rgb_img    = tensor_to_rgb(img_tensor)
-        cam_image  = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
-        heatmap    = cv2.applyColorMap(np.uint8(255 * grayscale_cam), cv2.COLORMAP_JET)
-        heatmap    = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        rgb_img   = tensor_to_rgb(img_tensor)
+        cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
+        heatmap   = cv2.applyColorMap(np.uint8(255 * grayscale_cam), cv2.COLORMAP_JET)
+        heatmap   = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
 
         is_correct  = (pred == true_label)
         frame_color = "#27AE60" if is_correct else "#E74C3C"
@@ -559,7 +606,7 @@ def visualize_gradcam(model, model_name, target_layer, test_dataset, device,
 
 
 # ─────────────────────────────────────────
-# SECTION 11: ViT ATTENTION MAP
+# SECTION 11: ViT ATTENTION MAPS
 # ─────────────────────────────────────────
 
 def resize_att(att_map, size):
@@ -568,34 +615,53 @@ def resize_att(att_map, size):
             (size, size), Image.BILINEAR)) / 255.0
 
 
-def get_vit_attention_map(model, image_tensor, device):
+def get_last_layer_attention(model, img_tensor, device):
     """
-    Uses the LAST transformer layer's CLS-token attention averaged over all heads.
-    Avoids the near-zero collapse that full attention rollout produces across 12 layers,
-    giving clearly visible heatmaps.
+    Returns (14×14) normalised CLS attention from the LAST transformer layer.
+    Works because output_attentions=True is baked into the model config.
     """
     model.eval()
     with torch.no_grad():
-        out = model(pixel_values=image_tensor.unsqueeze(0).to(device),
-                    output_attentions=True)
-    layer_attns = out.attentions          # tuple of 12 × (1, heads, 197, 197)
+        out = model(pixel_values=img_tensor.unsqueeze(0).to(device))
+
+    layer_attns = out.attentions
     if layer_attns is None or len(layer_attns) == 0:
-        return np.ones((14, 14)) / (14 * 14)
+        raise RuntimeError(
+            "out.attentions is None — model was not built with "
+            "ViTConfig(output_attentions=True). Re-run get_vit_b16()."
+        )
 
-    # Last layer only — most task-relevant attention
-    last_attn = layer_attns[-1]           # (1, 12, 197, 197)
-    # Average over heads, take CLS row, drop CLS token → (196,)
-    avg_heads = last_attn[0].mean(dim=0)  # (197, 197)
-    cls_attn  = avg_heads[0, 1:].cpu()   # (196,)
+    last_attn = layer_attns[-1]            # (1, 12, 197, 197)
+    avg_heads = last_attn[0].mean(dim=0)   # (197, 197)
+    cls_attn  = avg_heads[0, 1:].cpu()    # (196,)
 
-    grid_size = int(cls_attn.shape[0] ** 0.5)  # 14
-    att_map   = cls_attn.reshape(grid_size, grid_size).numpy()
-    att_map   = (att_map - att_map.min()) / (att_map.max() - att_map.min() + 1e-8)
+    att_map = cls_attn.reshape(14, 14).numpy()
+    att_map = (att_map - att_map.min()) / (att_map.max() - att_map.min() + 1e-8)
     return att_map
 
 
+def get_all_layer_attentions(model, img_tensor, device):
+    """Returns list of 12 × (14×14) normalised maps, one per transformer layer."""
+    model.eval()
+    with torch.no_grad():
+        out = model(pixel_values=img_tensor.unsqueeze(0).to(device))
+
+    layer_attns = out.attentions
+    if layer_attns is None:
+        raise RuntimeError("out.attentions is None — check model config.")
+
+    maps = []
+    for layer_attn in layer_attns:
+        avg_heads = layer_attn[0].mean(dim=0)
+        cls_attn  = avg_heads[0, 1:].cpu().numpy()
+        att_map   = cls_attn.reshape(14, 14)
+        att_map   = (att_map - att_map.min()) / (att_map.max() - att_map.min() + 1e-8)
+        maps.append(att_map)
+    return maps
+
+
 def visualize_vit_attention(model, test_dataset, device, num_samples=8):
-    """ViT Attention Rollout — 2 samples per class, 4-column layout."""
+    """2 samples per class — Original | Attention Map | Overlay | Confidence."""
     model.eval()
 
     class_indices = {i: [] for i in range(CONFIG["num_classes"])}
@@ -607,18 +673,18 @@ def visualize_vit_attention(model, test_dataset, device, num_samples=8):
 
     sample_indices = [idx for v in class_indices.values() for idx in v][:num_samples]
 
-    fig, axes = plt.subplots(num_samples, 4, figsize=(20, num_samples * 4))
+    fig, axes = plt.subplots(num_samples, 4, figsize=(22, num_samples * 4.2))
     fig.suptitle("ViT-B/16 — Attention Map Visualization\n"
-                 "(Original | Attention Map | Overlay | Confidence)",
+                 "(Original MRI  |  Attention Map  |  Overlay  |  Class Confidence)",
                  fontsize=15, fontweight="bold", y=1.01)
 
-    col_titles = ["Original MRI", "Attention Map", "Overlay", "Confidence"]
+    col_titles = ["Original MRI", "Attention Map (Last Layer)", "Overlay", "Confidence"]
     for ax, title in zip(axes[0], col_titles):
         ax.set_title(title, fontsize=12, fontweight="bold")
 
     for row, idx in enumerate(sample_indices):
         img_tensor, true_label = test_dataset[idx]
-        att_map = get_vit_attention_map(model, img_tensor, device)
+        att_map = get_last_layer_attention(model, img_tensor, device)
 
         with torch.no_grad():
             out        = model(pixel_values=img_tensor.unsqueeze(0).to(device))
@@ -637,7 +703,8 @@ def visualize_vit_attention(model, test_dataset, device, num_samples=8):
 
         axes[row][0].imshow(display_img)
         axes[row][0].set_ylabel(
-            f"True: {CONFIG['display_names'][true_label]}", fontsize=9, fontweight="bold")
+            f"True: {CONFIG['display_names'][true_label]}",
+            fontsize=9, fontweight="bold")
 
         im = axes[row][1].imshow(att_resized, cmap="jet", vmin=0, vmax=1)
         plt.colorbar(im, ax=axes[row][1], fraction=0.046, pad=0.04)
@@ -645,10 +712,10 @@ def visualize_vit_attention(model, test_dataset, device, num_samples=8):
         axes[row][2].imshow(overlay)
         axes[row][2].set_xlabel("Red = high attention", fontsize=8, style="italic")
 
-        bar_colors = ["#E74C3C" if i == pred_label else "#BDC3C7"
-                      for i in range(CONFIG["num_classes"])]
+        bar_colors_conf = ["#E74C3C" if i == pred_label else "#BDC3C7"
+                           for i in range(CONFIG["num_classes"])]
         axes[row][3].barh(CONFIG["display_names"], probs * 100,
-                          color=bar_colors, edgecolor="white", linewidth=1.2)
+                          color=bar_colors_conf, edgecolor="white", linewidth=1.2)
         axes[row][3].set_xlim(0, 100)
         axes[row][3].set_xlabel("Confidence (%)", fontsize=9)
         axes[row][3].axvline(x=50, color="gray", linestyle="--", alpha=0.5)
@@ -665,6 +732,100 @@ def visualize_vit_attention(model, test_dataset, device, num_samples=8):
 
     plt.tight_layout()
     path = os.path.join(CONFIG["save_dir"], "vit_attention_maps.png")
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.show()
+    print(f"  Saved: {path}")
+
+
+def visualize_vit_attention_all_layers(model, test_dataset, device, sample_idx=0):
+    """All 12 transformer layers for one sample."""
+    model.eval()
+    img_tensor, true_label = test_dataset[sample_idx]
+    all_maps = get_all_layer_attentions(model, img_tensor, device)
+
+    with torch.no_grad():
+        out   = model(pixel_values=img_tensor.unsqueeze(0).to(device))
+        probs = torch.softmax(out.logits, dim=1)[0].cpu().numpy()
+    pred_label  = int(probs.argmax())
+    display_img = tensor_to_rgb(img_tensor)
+
+    fig = plt.figure(figsize=(26, 10))
+    fig.suptitle(
+        f"ViT-B/16 — Attention Across All 12 Layers\n"
+        f"True: {CONFIG['display_names'][true_label]}  |  "
+        f"Pred: {CONFIG['display_names'][pred_label]} ({probs[pred_label]*100:.1f}%)",
+        fontsize=13, fontweight="bold"
+    )
+
+    ax_orig = fig.add_subplot(2, 7, 1)
+    ax_orig.imshow(display_img); ax_orig.set_title("Original", fontsize=11, fontweight="bold")
+    ax_orig.axis("off")
+
+    positions = [2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14]
+    cmaps = ["Blues", "Purples", "Greens", "Oranges",
+             "Reds",  "YlOrBr",  "BuGn",   "RdPu",
+             "YlGnBu","hot",     "cool",    "jet"]
+
+    for i, (att_map, pos, cmap) in enumerate(zip(all_maps, positions, cmaps)):
+        att_resized = resize_att(att_map, CONFIG["img_size"])
+        ax = fig.add_subplot(2, 7, pos)
+        ax.imshow(att_resized, cmap=cmap, vmin=0, vmax=1)
+        ax.set_title(f"Layer {i+1}", fontsize=10)
+        ax.axis("off")
+
+    plt.tight_layout()
+    path = os.path.join(CONFIG["save_dir"], "vit_attention_all_layers.png")
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.show()
+    print(f"  Saved: {path}")
+
+
+def visualize_attention_heads(model, test_dataset, device, sample_idx=0):
+    """All 12 heads from the last transformer layer for one sample."""
+    model.eval()
+    img_tensor, true_label = test_dataset[sample_idx]
+
+    with torch.no_grad():
+        out  = model(pixel_values=img_tensor.unsqueeze(0).to(device))
+        probs = torch.softmax(out.logits, dim=1)[0].cpu().numpy()
+
+    pred_label  = int(probs.argmax())
+    last_attn   = out.attentions[-1][0]   # (12, 197, 197)
+    display_img = tensor_to_rgb(img_tensor)
+
+    fig, axes = plt.subplots(3, 5, figsize=(22, 14))
+    fig.suptitle(
+        f"ViT-B/16 — Last Layer: All 12 Attention Heads\n"
+        f"True: {CONFIG['display_names'][true_label]}  |  "
+        f"Pred: {CONFIG['display_names'][pred_label]} ({probs[pred_label]*100:.1f}%)",
+        fontsize=14, fontweight="bold"
+    )
+
+    axes[0][0].imshow(display_img)
+    axes[0][0].set_title("Original MRI", fontsize=11, fontweight="bold")
+    axes[0][0].axis("off")
+
+    all_axes = axes.flatten()
+    for h in range(12):
+        cls_attn = last_attn[h, 0, 1:].cpu().numpy()
+        att_map  = cls_attn.reshape(14, 14)
+        att_map  = (att_map - att_map.min()) / (att_map.max() - att_map.min() + 1e-8)
+        att_resized = resize_att(att_map, CONFIG["img_size"])
+        ax = all_axes[h + 1]
+        ax.imshow(att_resized, cmap="jet", vmin=0, vmax=1)
+        ax.set_title(f"Head {h+1}", fontsize=10)
+        ax.axis("off")
+
+    avg_att = last_attn.mean(dim=0)[0, 1:].cpu().numpy()
+    avg_map = avg_att.reshape(14, 14)
+    avg_map = (avg_map - avg_map.min()) / (avg_map.max() - avg_map.min() + 1e-8)
+    all_axes[13].imshow(resize_att(avg_map, CONFIG["img_size"]), cmap="hot", vmin=0, vmax=1)
+    all_axes[13].set_title("Avg (all heads)", fontsize=10, fontweight="bold")
+    all_axes[13].axis("off")
+    all_axes[14].axis("off")
+
+    plt.tight_layout()
+    path = os.path.join(CONFIG["save_dir"], "vit_attention_heads.png")
     plt.savefig(path, dpi=150, bbox_inches="tight")
     plt.show()
     print(f"  Saved: {path}")
@@ -706,7 +867,7 @@ trained_models["EfficientNetB0"] = effnet_model
 
 # ── 12.3  ViT-B/16 ──────────────────────
 print("\n>>> STEP 3/3 — ViT-B/16")
-vit_model = get_vit_b16(CONFIG["num_classes"])
+vit_model = get_vit_b16(CONFIG["num_classes"])   # ← uses ViTConfig fix
 vit_model, vit_history, vit_time = train_model(
     "ViT-B/16", vit_model, train_loader, val_loader,
     CONFIG["lr_vit"], CONFIG["total_epochs"], CONFIG["device"], is_vit=True)
@@ -725,34 +886,46 @@ print("\n" + "=" * 60)
 print("  GENERATING PLOTS")
 print("=" * 60)
 
-# 1. Loss curves — all 3 models in one figure
+# 1. Loss curves
 plot_combined_loss_curves(all_histories)
 
-# 2. Confusion matrices — all 3 models in one figure (raw counts)
+# 2. Accuracy curves
+plot_combined_accuracy_curves(all_histories)
+
+# 3. Confusion matrices
 plot_combined_confusion_matrices(all_results)
 
-# 3. ROC curves — 1 figure per model
+# 4. ROC curves
 plot_roc_curves_per_model(all_results)
 
-# 4. Metrics comparison table (bar chart + printed table)
+# 5. Metrics comparison
 plot_metrics_table(all_results)
 
-# 5. GradCAM — ResNet50
+# 6. GradCAM — ResNet50
 print("\n  Generating GradCAM for ResNet50...")
 resnet_target_layer = trained_models["ResNet50"].layer4[-1]
 visualize_gradcam(trained_models["ResNet50"], "ResNet50",
                   resnet_target_layer, test_dataset, CONFIG["device"])
 
-# 6. GradCAM — EfficientNetB0
+# 7. GradCAM — EfficientNetB0
 print("\n  Generating GradCAM for EfficientNetB0...")
-# EfficientNet: last conv block
 effnet_target_layer = trained_models["EfficientNetB0"].features[-1]
 visualize_gradcam(trained_models["EfficientNetB0"], "EfficientNetB0",
                   effnet_target_layer, test_dataset, CONFIG["device"])
 
-# 7. ViT Attention Maps
+# 8. ViT Attention Maps (2 per class)
 print("\n  Generating ViT Attention Maps...")
 visualize_vit_attention(trained_models["ViT-B/16"], test_dataset, CONFIG["device"])
+
+# 9. ViT All-layer attention (1 sample)
+print("\n  Generating ViT All-Layer Attention Maps...")
+visualize_vit_attention_all_layers(trained_models["ViT-B/16"], test_dataset,
+                                   CONFIG["device"], sample_idx=0)
+
+# 10. ViT Head diversity (last layer)
+print("\n  Generating ViT Attention Heads...")
+visualize_attention_heads(trained_models["ViT-B/16"], test_dataset,
+                          CONFIG["device"], sample_idx=0)
 
 
 # ─────────────────────────────────────────
@@ -785,6 +958,6 @@ for name, t in zip(["ResNet50", "EfficientNetB0", "ViT-B/16"],
 
 print("\n" + "=" * 60)
 print("  ✅ ALL DONE!")
-print(f"  📁 Model weights (.pth) + plots + CSV → {CONFIG['save_dir']}")
-print("  📦 Download files from Kaggle Output panel")
+print(f"  📁 Outputs → {CONFIG['save_dir']}")
+print("  📦 Download from Kaggle Output panel")
 print("=" * 60)
