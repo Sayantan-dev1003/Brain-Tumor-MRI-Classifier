@@ -88,7 +88,7 @@ While single-head attention learns one relationship pattern, **Multi-Head Self-A
      - $\text{Softmax}$: Normalizes the scores into a probability distribution (summing to 1).
 
   3. **Multi-Head Concatenation**: The outputs of all 12 heads are concatenated and projected back to the original dimension $D$ using an output projection matrix $W^O \in \mathbb{R}^{D \times D}$:
-     $$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \dots, \text{head}_{12}) W^O$$
+     $$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \text{head}_2, \dots, \text{head}_{12}) W^O$$
 - **Why it matters for MRI**: Medical diagnosis is multi-faceted. A tumor's classification depends on its size, texture, and position relative to brain structures. MHSA ensures the model doesn't over-fixate on a single visual cue, providing a more robust diagnostic representation.
 
 ---
@@ -246,16 +246,16 @@ Last layer attention: (1, 12, 197, 197)
 ```
 brain_tumor_classifier/
 │
-├── kaggle_train.py              ← Full training script (run on Kaggle)
+├── train.py                     ← Full training script
+├── app.py                       ← Streamlit web application
+├── requirements.txt             ← Python dependencies
+├── README.md                    ← This file
+├── assets/                      ← Visual assets and diagrams
 │
-└── streamlit_app/
-    ├── app.py                   ← Streamlit web application
-    ├── requirements.txt         ← Python dependencies
-    ├── README.md                ← This file
-    └── models/                  ← Place downloaded .pth weight files here
-        ├── ResNet50.pth
-        ├── EfficientNetB0.pth
-        └── ViT-B-16.pth
+└── models/                      ← Place downloaded .pth weight files here
+    ├── ResNet50.pth
+    ├── EfficientNetB0.pth
+    └── ViT-B-16.pth
 ```
 
 ---
@@ -301,7 +301,7 @@ results_summary.csv
 #### 1. Clone / navigate to the project
 
 ```bash
-cd streamlit_app
+cd brain_tumor_classifier
 ```
 
 #### 2. Install dependencies
@@ -317,10 +317,10 @@ pip install -r requirements.txt
 
 #### 3. Place model weights
 
-Copy your downloaded `.pth` files into `streamlit_app/models/`:
+Copy your downloaded `.pth` files into the `models/` directory:
 
 ```
-streamlit_app/
+brain_tumor_classifier/
 └── models/
     ├── ResNet50.pth
     ├── EfficientNetB0.pth
@@ -374,18 +374,6 @@ The Streamlit app provides a fully interactive inference and explainability inte
 ## 📚 References
 
 1. Dosovitskiy, A. et al. (2020). *An Image is Worth 16×16 Words: Transformers for Image Recognition at Scale.* [arXiv:2010.11929](https://arxiv.org/abs/2010.11929)
-2. Tan, M. & Le, Q. V. (2019). *EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks.* ICML 2019.
-3. He, K. et al. (2016). *Deep Residual Learning for Image Recognition.* CVPR 2016.
-4. Tummala, S. (2022). *Brain Tumor Classification from MRI using Vision Transformers Ensembling.* arXiv preprint.
-5. Henry, E. U. et al. *Vision Transformers in Medical Imaging: A Review.*
-6. Nickparvar, M. [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset). Kaggle.
-7. Selvaraju, R. R. et al. (2017). *Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization.* ICCV 2017.
-8. Vaswani, A. et al. (2017). *Attention is All You Need.* NeurIPS 2017.
-
----
-
-<div align="center">
-
-*CV Course Project · Vision Transformers in Medical Imaging · IITRAM Ahmedabad*
-
-</div>
+2. Tummala, S. (2022). *Brain Tumor Classification from MRI using Vision Transformers Ensembling.* arXiv preprint.
+3. Henry, E. U. et al. *Vision Transformers in Medical Imaging: A Review.*
+4. Nickparvar, M. [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset). Kaggle.
