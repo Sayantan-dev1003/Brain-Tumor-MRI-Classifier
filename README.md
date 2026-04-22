@@ -46,7 +46,7 @@ Vision Transformers address these gaps by treating the image as a sequence of pa
 
 Introduced in ["An Image is Worth 16×16 Words"](https://arxiv.org/abs/2010.11929) (Dosovitskiy et al., 2020), ViT applies the Transformer architecture — originally designed for NLP — directly to image patches.
 
-**Processing pipeline:**
+**ViT-B/16 Architecture:**
 
 ![ViT-B/16 Architecture](assets/vit_architecture.png)
 
@@ -61,14 +61,34 @@ While single-head attention learns one relationship pattern, **Multi-Head Self-A
 
 ![Self-Attention Mechanism](assets/self_attention.png)
 
+- **Intuitive Explanation (Search-and-Retrieve)**:
+  Think of the attention mechanism as a database retrieval system where every patch interacts with every other patch:
+  - **Query ($Q$)**: Represents "What am I looking for?" (e.g., *Is there a tumor boundary here?*).
+  - **Key ($K$)**: Represents "What information do I contain?" (e.g., *I contain high-intensity edge features*).
+  - **Value ($V$)**: Represents "What information should I pass on?" (the actual pixel/feature data).
+  
+  By computing the dot product $QK^T$, the model determines the compatibility between a Query and a Key. If they match, the corresponding **Value** is emphasized, allowing the model to "attend" to relevant distant features.
+
 - **Parallel Processing**: In our ViT-B/16 model, we use **12 attention heads**. Each head operates in parallel, allowing the model to focus on various features:
   - *Heads 1-4*: Typically capture local features like tumor boundaries and sharp edges.
   - *Heads 5-8*: Often learn global spatial context, such as the overall symmetry of the brain.
   - *Heads 9-12*: Focus on complex relational features and subtle intensity variations in MRI signals.
 - **The Mathematical Mechanism**:
-  1. **Linear Projection**: Input embeddings are projected into $h$ sets of Queries ($Q_i$), Keys ($K_i$), and Values ($V_i$).
-  2. **Scaled Dot-Product**: For each head, attention is computed as: $Attention(Q,K,V) = Softmax(\frac{QK^T}{\sqrt{d_k}})V$. The scaling factor $\sqrt{d_k}$ prevents the dot product from growing too large.
-  3. **Concatenation**: The outputs of all 12 heads are concatenated and projected back to the original dimension: $MultiHead(Q,K,V) = Concat(head_1, ..., head_h)W^O$.
+  
+  Let $X \in \mathbb{R}^{N \times D}$ be the matrix of input patch embeddings, where $N=196$ is the number of patches and $D=768$ is the embedding dimension.
+
+  1. **Linear Projection**: For each head $i \in \{1, \dots, 12\}$, the input $X$ is projected into Queries ($Q_i$), Keys ($K_i$), and Values ($V_i$) using learnable weight matrices $W_i^Q, W_i^K, W_i^V \in \mathbb{R}^{D \times d_k}$:
+     $$Q_i = XW_i^Q, \quad K_i = XW_i^K, \quad V_i = XW_i^V$$
+     In our model, $d_k = D/h = 768/12 = 64$.
+
+  2. **Scaled Dot-Product Attention**: For each head, the attention is computed by measuring the compatibility of Queries and Keys:
+     $$\text{Attention}(Q_i, K_i, V_i) = \text{Softmax}\left(\frac{Q_i K_i^T}{\sqrt{d_k}}\right) V_i$$
+     - $Q_i K_i^T$: Represents the raw attention scores (similarity) between all patches.
+     - $\sqrt{d_k}$: A scaling factor to prevent the dot product from reaching regions of the Softmax function where gradients are extremely small.
+     - $\text{Softmax}$: Normalizes the scores into a probability distribution (summing to 1).
+
+  3. **Multi-Head Concatenation**: The outputs of all 12 heads are concatenated and projected back to the original dimension $D$ using an output projection matrix $W^O \in \mathbb{R}^{D \times D}$:
+     $$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \dots, \text{head}_{12}) W^O$$
 - **Why it matters for MRI**: Medical diagnosis is multi-faceted. A tumor's classification depends on its size, texture, and position relative to brain structures. MHSA ensures the model doesn't over-fixate on a single visual cue, providing a more robust diagnostic representation.
 
 ---
