@@ -74,25 +74,79 @@ While single-head attention learns one relationship pattern, **Multi-Head Self-A
   - *Heads 5-8*: Often learn global spatial context, such as the overall symmetry of the brain.
   - *Heads 9-12*: Focus on complex relational features and subtle intensity variations in MRI signals.
 
-**The Mathematical Mechanism**:
-  
-  Let $X \in \mathbb{R}^{N \times D}$ be the matrix of input patch embeddings, where $N=196$ is the number of patches and $D=768$ is the embedding dimension.
+## The Mathematical Mechanism
 
-1. **Linear Projection**: For each head $i \in \{1, \dots, 12\}$, the input $X$ is projected into Queries ($Q_i$), Keys ($K_i$), and Values ($V_i$) using learnable weight matrices $W_i^Q, W_i^K, W_i^V \in \mathbb{R}^{D \times d_k}$:
-     $$Q_i = XW_i^Q, \quad K_i = XW_i^K, \quad V_i = XW_i^V$$
-     In our model, $d_k = D/h = 768/12 = 64$.
+Let $X \in \mathbb{R}^{N \times D}$ be the matrix of input patch embeddings, where:
+- $N = 196$ → number of patches  
+- $D = 768$ → embedding dimension  
 
-2. **Scaled Dot-Product Attention**: For each head, the attention is computed by measuring the compatibility of Queries and Keys:
-     $$\text{Attention}(Q_i, K_i, V_i) = \text{Softmax}\left(\frac{Q_i K_i^T}{\sqrt{d_k}}\right) V_i$$
-     - $Q_i K_i^T$: Represents the raw attention scores (similarity) between all patches.
-     - $\sqrt{d_k}$: A scaling factor to prevent the dot product from reaching regions of the Softmax function where gradients are extremely small.
-     - $\text{Softmax}$: Normalizes the scores into a probability distribution (summing to 1).
+---
 
-3. **Multi-Head Concatenation**: The outputs of all 12 heads are concatenated and projected back to the original dimension $D$ using an output projection matrix $W^O \in \mathbb{R}^{D \times D}$:
+### 1. Linear Projection
 
-$$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}\_1, \text{head}\_2, \dots, \text{head}\_{12}) \cdot W^O$$
+For each head $i \in \{1, \dots, 12\}$, the input $X$ is projected into Queries, Keys, and Values:
 
-**Why it matters for MRI**: Medical diagnosis is multi-faceted. A tumor's classification depends on its size, texture, and position relative to brain structures. MHSA ensures the model doesn't over-fixate on a single visual cue, providing a more robust diagnostic representation.
+$$
+Q_i = XW_i^Q, \quad 
+K_i = XW_i^K, \quad 
+V_i = XW_i^V
+$$
+
+where:
+
+$$
+W_i^Q, W_i^K, W_i^V \in \mathbb{R}^{D \times d_k}
+$$
+
+and
+
+$$
+d_k = \frac{D}{h} = \frac{768}{12} = 64
+$$
+
+---
+
+### 2. Scaled Dot-Product Attention
+
+The attention for each head is computed as:
+
+$$
+\text{Attention}(Q_i, K_i, V_i) =
+\text{Softmax} \left( \frac{Q_i K_i^T}{\sqrt{d_k}} \right) V_i
+$$
+
+**Explanation:**
+- $Q_i K_i^T$ → similarity between patches  
+- $\sqrt{d_k}$ → scaling to stabilize gradients  
+- $\text{Softmax}$ → converts scores into probabilities  
+
+---
+
+### 3. Multi-Head Attention
+
+Outputs from all heads are concatenated and projected:
+
+$$
+\text{MultiHead}(Q, K, V) =
+\text{Concat}(\text{head}_1, \dots, \text{head}_{12}) W^O
+$$
+
+where:
+
+$$
+W^O \in \mathbb{R}^{D \times D}
+$$
+
+---
+
+### Why it matters for MRI
+
+Medical diagnosis depends on multiple factors like size, texture, and spatial relationships.  
+Multi-Head Self-Attention (MHSA) allows the model to:
+
+- Capture global dependencies  
+- Avoid focusing on a single feature  
+- Learn richer representations for tumor classification  
 
 ---
 
